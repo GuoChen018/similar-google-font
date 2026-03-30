@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teaching AI to See Fonts</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --text: #1a1a1a;
+    --text-secondary: #666;
+    --bg: #fafafa;
+    --border: #e5e5e5;
+    --accent: #000;
+    --green: #22c55e;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --amber: #f59e0b;
+    --purple: #8b5cf6;
+    --neutral: #a3a3a3;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* Hero */
+  .hero {
+    padding: 140px 0 80px;
+    border-bottom: 1px solid var(--border);
+  }
+  .hero h1 {
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.15;
+    margin-bottom: 20px;
+  }
+  .hero p {
+    font-size: 1.15rem;
+    color: var(--text-secondary);
+    max-width: 540px;
+    line-height: 1.7;
+  }
+
+  /* Sections */
+  section {
+    padding: 80px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-of-type { border-bottom: none; }
+
+  .section-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--neutral);
+    margin-bottom: 16px;
+  }
+
+  h3 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    margin-bottom: 16px;
+    line-height: 1.25;
+  }
+
+  p { margin-bottom: 16px; color: var(--text-secondary); font-size: 1.02rem; }
+  p:last-child { margin-bottom: 0; }
+
+  .hl { color: var(--text); font-weight: 600; }
+
+  /* Cards */
+  .card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 28px 0;
+  }
+  .card-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--neutral);
+    margin-bottom: 12px;
+  }
+
+  /* Pipeline */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 32px 0;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .pipeline-step {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    text-align: center;
+    flex-shrink: 0;
+    min-width: 110px;
+  }
+  .pipeline-step .icon { font-size: 1.4rem; margin-bottom: 4px; }
+  .pipeline-step .step-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .pipeline-step .step-desc {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    line-height: 1.3;
+  }
+  .pipeline-arrow {
+    font-size: 1rem;
+    color: var(--neutral);
+    flex-shrink: 0;
+    padding: 0 6px;
+  }
+
+  /* LoRA Grid */
+  .lora-grid-container {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    margin: 28px 0;
+  }
+  .lora-grid-visual {
+    width: 200px;
+    flex-shrink: 0;
+    display: grid;
+    grid-template-columns: repeat(20, 1fr);
+    gap: 2px;
+  }
+  .lora-cell {
+    aspect-ratio: 1;
+    border-radius: 2px;
+    background: #e8e8e8;
+    transition: background 0.3s;
+  }
+  .lora-cell.active {
+    background: var(--text);
+    animation: lora-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes lora-pop {
+    0% { transform: scale(0); }
+    100% { transform: scale(1); }
+  }
+  .lora-text { flex: 1; }
+  .lora-stat {
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .lora-stat-desc {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* Fingerprint viz */
+  .fp-demo {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin: 28px 0;
+  }
+  .fp-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .fp-font-label {
+    width: 90px;
+    flex-shrink: 0;
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-align: right;
+  }
+  .fp-arrow { color: var(--neutral); flex-shrink: 0; font-size: 0.9rem; }
+  .fp-bars {
+    flex: 1;
+    display: flex;
+    gap: 1px;
+    height: 36px;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .fp-bar {
+    flex: 1;
+    transition: height 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .fp-match {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    width: 70px;
+    text-align: center;
+    padding: 4px 8px;
+    border-radius: 20px;
+  }
+
+  /* Batch viz */
+  .batch-grid {
+    display: grid;
+    grid-template-columns: auto 1fr 1fr;
+    gap: 4px 8px;
+    margin: 28px 0;
+    align-items: center;
+    max-height: 440px;
+    overflow: hidden;
+    position: relative;
+  }
+  .batch-grid::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: linear-gradient(transparent, #fff);
+    pointer-events: none;
+  }
+  .batch-family {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-align: right;
+    padding-right: 4px;
+    white-space: nowrap;
+  }
+  .batch-cell {
+    height: 32px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #fff;
+  }
+  .batch-header {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--neutral);
+    text-align: center;
+    padding-bottom: 4px;
+  }
+
+  /* Loss bars */
+  .loss-item {
+    margin-bottom: 20px;
+  }
+  .loss-item:last-child { margin-bottom: 0; }
+  .loss-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .loss-name { font-size: 0.85rem; font-weight: 700; }
+  .loss-weight {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--neutral);
+    font-variant-numeric: tabular-nums;
+  }
+  .loss-desc {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+  .loss-track {
+    height: 8px;
+    background: #f0f0f0;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .loss-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+    width: 0;
+  }
+
+  /* Recall viz */
+  .recall-demo {
+    margin: 28px 0;
+  }
+  .recall-query {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .recall-query-img {
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    background: #e8e8e8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    font-weight: 800;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .recall-query-img::after {
+    content: '📸';
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    font-size: 0.8rem;
+  }
+  .recall-query-text {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+  }
+  .recall-query-text strong { color: var(--text); }
+  .recall-results {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .recall-result {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+    transition: all 0.3s;
+  }
+  .recall-result.hit {
+    border-color: var(--green);
+    background: #f0fdf4;
+  }
+  .recall-rank {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--neutral);
+    width: 20px;
+    text-align: center;
+  }
+  .recall-font-name { font-size: 0.85rem; font-weight: 600; flex: 1; }
+  .recall-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 3px 8px;
+    border-radius: 20px;
+  }
+  .recall-badge.match { background: var(--green); color: #fff; }
+  .recall-badge.miss { background: #f0f0f0; color: var(--neutral); }
+
+  .recall-verdict {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .recall-verdict.pass { background: #f0fdf4; color: #166534; }
+
+  /* Metrics */
+  .metric-row {
+    display: flex;
+    gap: 12px;
+    margin: 28px 0;
+  }
+  .metric {
+    flex: 1;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 16px;
+    text-align: center;
+  }
+  .metric .value {
+    font-size: 2.2rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+  }
+  .metric .mlabel {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    font-weight: 500;
+  }
+  .metric .change {
+    font-size: 0.7rem;
+    color: var(--green);
+    font-weight: 700;
+    margin-top: 4px;
+  }
+  .metric .explain {
+    font-size: 0.68rem;
+    color: var(--neutral);
+    margin-top: 6px;
+    line-height: 1.3;
+  }
+
+  /* Canvas */
+  .canvas-wrap {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 28px 0;
+    position: relative;
+  }
+  canvas { display: block; width: 100%; cursor: pointer; }
+  .canvas-hint {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.7rem;
+    color: var(--neutral);
+    pointer-events: none;
+    background: rgba(255,255,255,0.8);
+    padding: 4px 12px;
+    border-radius: 20px;
+  }
+
+  /* Analogy box */
+  .analogy {
+    background: #fff;
+    border-left: 3px solid var(--border);
+    padding: 16px 20px;
+    margin: 24px 0;
+    border-radius: 0 8px 8px 0;
+  }
+  .analogy p { font-size: 0.92rem; font-style: italic; margin: 0; }
+
+  /* Scroll reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.5s, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  footer {
+    padding: 48px 0 100px;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--neutral);
+  }
+
+  @media (max-width: 600px) {
+    .hero h1 { font-size: 2rem; }
+    .lora-grid-container { flex-direction: column; }
+    .lora-grid-visual { width: 100%; }
+    .fp-row { flex-wrap: wrap; }
+    .fp-font-label { width: 100%; text-align: left; }
+    .metric-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <header class="hero reveal">
+    <h1>Teaching AI to<br>See Fonts</h1>
+    <p>A visual walkthrough of how we fine-tuned a vision model to identify fonts from camera photos — no ML background needed.</p>
+  </header>
+
+  <!-- ═══════════════════════════════════════ 1. THE PROBLEM ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">The Problem</div>
+      <h3>You see a font you love. Now what?</h3>
+      <p>You spot beautiful lettering on a sign, a menu, a book cover. You want to know: <span class="hl">what font is that?</span></p>
+      <p>We're building an app where you snap a photo and get the closest matching fonts from Google Fonts. Here's the pipeline, step by step:</p>
+    </div>
+
+    <div class="pipeline reveal">
+      <div class="pipeline-step">
+        <div class="icon">📸</div>
+        <div class="step-label">Photo</div>
+        <div class="step-desc">Your camera image</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="icon">🧠</div>
+        <div class="step-label">Model</div>
+        <div class="step-desc">Analyzes the shapes</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="icon">📊</div>
+        <div class="step-label">Fingerprint</div>
+        <div class="step-desc">256 numbers</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="icon">🔍</div>
+        <div class="step-label">Compare</div>
+        <div class="step-desc">Find closest match</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="icon">✅</div>
+        <div class="step-label">Result</div>
+        <div class="step-desc">Font name!</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════ 2. THE BASE MODEL ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">Starting Point</div>
+      <h3>A brain that already sees</h3>
+      <p>Meta built a model called <span class="hl">DINOv2</span> — a neural network trained on millions of images. It already understands visual concepts like shapes, edges, and textures. It just doesn't know anything about <em>fonts</em> specifically.</p>
+      <p>Instead of building from scratch, we take this existing brain and <span class="hl">teach it about fonts</span>. This process is called <span class="hl">fine-tuning</span> — like sending it to font school.</p>
+    </div>
+    <div class="analogy reveal">
+      <p>Think of hiring a professional artist who already understands shapes and composition, then teaching them to identify typography — instead of teaching a toddler to draw first.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════ 3. LoRA ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">Efficient Learning</div>
+      <h3>Changing just 0.4% of the brain</h3>
+      <p>DINOv2 has <span class="hl">86 million parameters</span> (think of these as the "neurons" or knobs in its brain). Retraining all of them would be slow, expensive, and could make the model forget what it already knows.</p>
+      <p>Instead, we use a technique called <span class="hl">LoRA</span> (Low-Rank Adaptation). It freezes 99.6% of the brain and only adds a thin layer of new, trainable connections.</p>
+    </div>
+
+    <div class="card reveal">
+      <div class="card-label">Interactive — hover to see what LoRA modifies</div>
+      <div class="lora-grid-container">
+        <div class="lora-grid-visual" id="lora-grid"></div>
+        <div class="lora-text">
+          <div class="lora-stat">0.4%</div>
+          <div class="lora-stat-desc">
+            Each square is a chunk of the model's brain.
+            <span class="hl">Dark squares</span> = the tiny fraction we modify.
+            Everything else stays frozen.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="analogy reveal">
+      <p>Like putting sticky notes on a few pages of a textbook instead of rewriting the whole thing. The original knowledge stays intact; the sticky notes add font-specific tips.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════ 4. FINGERPRINTS ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">Core Idea</div>
+      <h3>Turning fonts into fingerprints</h3>
+      <p>The model takes any image and converts it into <span class="hl">256 numbers</span> — a fingerprint that captures the font's visual essence. Each number represents something about the font's style (we don't know exactly what each number means, but together they encode things like weight, serif presence, roundness, etc).</p>
+      <p>The key insight: <span class="hl">similar-looking fonts should have similar fingerprints</span>.</p>
+    </div>
+
+    <div class="card reveal" id="fp-card">
+      <div class="card-label">Fingerprint comparison — each colored bar is one of the 256 numbers</div>
+      <div class="fp-demo">
+        <div class="fp-row">
+          <div class="fp-font-label" style="font-family: Arial, sans-serif;">Roboto Bold</div>
+          <div class="fp-arrow">→</div>
+          <div class="fp-bars" id="fp-roboto-bold"></div>
+          <div class="fp-match" style="background: #f0fdf4; color: #166534;">—</div>
+        </div>
+        <div class="fp-row">
+          <div class="fp-font-label" style="font-family: Arial, sans-serif;">Roboto Light</div>
+          <div class="fp-arrow">→</div>
+          <div class="fp-bars" id="fp-roboto-light"></div>
+          <div class="fp-match" style="background: #f0fdf4; color: #166534;">92% match</div>
+        </div>
+        <div class="fp-row">
+          <div class="fp-font-label" style="font-family: Georgia, serif;">Playfair</div>
+          <div class="fp-arrow">→</div>
+          <div class="fp-bars" id="fp-playfair"></div>
+          <div class="fp-match" style="background: #fef2f2; color: #991b1b;">23% match</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <p>Roboto Bold and Roboto Light have <span class="hl">nearly identical</span> fingerprints (same family, same design DNA). Playfair Display's fingerprint looks completely different — the numbers spike in different places because it's a different style of font.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════ 5. EMBEDDING SPACE ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">Visualization</div>
+      <h3>The font map</h3>
+      <p>If we plot every font's fingerprint in space (imagine a big map), fonts that look alike end up <span class="hl">close together</span>, and fonts that look different end up <span class="hl">far apart</span>.</p>
+      <p>Before training, fonts are scattered randomly. After training, they cluster by visual similarity.</p>
+    </div>
+
+    <div class="canvas-wrap reveal">
+      <canvas id="embedding-canvas" height="380"></canvas>
+      <div class="canvas-hint" id="canvas-hint">click to see the effect of training</div>
+    </div>
+
+    <div class="reveal">
+      <p>Each dot is a font. Dots with the <span class="hl">same color</span> are from the same family (e.g. different weights of Roboto). Training teaches the model to pull same-family dots together and push different families apart.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════ 6. CONTRASTIVE LEARNING ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">How It Learns</div>
+      <h3>Learning from comparison</h3>
+      <p>The training process is called <span class="hl">contrastive learning</span>. The core idea is simple: show the model pairs of fonts, tell it which are the "same" and which are "different", and it gradually learns what makes fonts look alike.</p>
+    </div>
+
+    <div class="reveal">
+      <h3 style="font-size: 1.2rem; margin-top: 32px;">What a training batch looks like</h3>
+      <p>Each batch contains <span class="hl">64 font images</span>: we pick 32 font families, and grab 2 images from each. Here's a simplified view of one batch:</p>
+    </div>
+
+    <div class="card reveal">
+      <div class="card-label">One training batch — 32 families × 2 samples each = 64 images</div>
+      <div class="batch-grid" id="batch-grid">
+        <div class="batch-header"></div>
+        <div class="batch-header">Sample 1</div>
+        <div class="batch-header">Sample 2</div>
+      </div>
+      <p style="font-size: 0.78rem; color: var(--neutral); margin-top: 12px; text-align: center;">...and 22 more families in each batch</p>
+    </div>
+
+    <div class="reveal">
+      <p>For each batch, the model is told: the two samples in the <span class="hl">same row</span> (same color) are the "same" — pull their fingerprints closer. Every sample in a <span class="hl">different row</span> is "different" — push their fingerprints apart.</p>
+      <p>After seeing thousands of these batches, the model learns the visual DNA of each font family.</p>
+    </div>
+
+    <div class="analogy reveal">
+      <p>Like showing someone flashcards of dogs. "Golden retriever puppy and adult golden retriever — same breed. Golden retriever and poodle — different breed." After thousands of flashcards, they can recognize any golden retriever, even one they've never seen.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════ 7. THREE LOSSES ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">Training Signals</div>
+      <h3>Three teachers, one student</h3>
+      <p>The model gets feedback from three different "teachers" at the same time. Each teacher focuses on a different aspect of what makes fonts similar:</p>
+    </div>
+
+    <div class="card reveal" id="loss-card">
+      <div class="loss-item">
+        <div class="loss-header">
+          <div class="loss-name">Family Identity</div>
+          <div class="loss-weight">Weight: 1.0</div>
+        </div>
+        <div class="loss-desc">The main teacher. "Roboto Bold and Roboto Light are the same family — make their fingerprints close. Roboto and Playfair are different families — push them apart."</div>
+        <div class="loss-track"><div class="loss-fill" data-width="100" style="background: var(--text);"></div></div>
+      </div>
+      <div class="loss-item">
+        <div class="loss-header">
+          <div class="loss-name">Tag Similarity</div>
+          <div class="loss-weight">Weight: 0.3</div>
+        </div>
+        <div class="loss-desc">A softer teacher. Fonts tagged "geometric" or "rounded" on Google Fonts should be somewhat near each other, even if they're different families. Teaches cross-family visual similarity.</div>
+        <div class="loss-track"><div class="loss-fill" data-width="30" style="background: var(--text-secondary);"></div></div>
+      </div>
+      <div class="loss-item">
+        <div class="loss-header">
+          <div class="loss-name">Tag Prediction</div>
+          <div class="loss-weight">Weight: 0.2</div>
+        </div>
+        <div class="loss-desc">A side teacher. "Given this font image, predict its tags: is it serif? bold? decorative?" Forces the model to learn recognizable visual properties.</div>
+        <div class="loss-track"><div class="loss-fill" data-width="20" style="background: var(--neutral);"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════ 8. AUGMENTATION ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">Real-World Robustness</div>
+      <h3>Preparing for messy cameras</h3>
+      <p>We train on <span class="hl">clean, digitally rendered</span> text. But users send <span class="hl">messy camera photos</span> — with weird lighting, angles, blur, and backgrounds. To bridge this gap, we deliberately mess up the training images with random effects:</p>
+    </div>
+
+    <div class="card reveal">
+      <div class="card-label">Click each cell to cycle through augmentation effects</div>
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px;">
+        <div class="aug-cell" id="aug-0">
+          <span>Ag</span>
+          <div class="label">Clean</div>
+        </div>
+        <div class="aug-cell" id="aug-1" style="cursor: pointer;">
+          <span>Ag</span>
+          <div class="label">Click me</div>
+        </div>
+        <div class="aug-cell" id="aug-2" style="cursor: pointer;">
+          <span>Ag</span>
+          <div class="label">Click me</div>
+        </div>
+        <div class="aug-cell" id="aug-3" style="cursor: pointer;">
+          <span>Ag</span>
+          <div class="label">Click me</div>
+        </div>
+      </div>
+      <style>
+        .aug-cell {
+          background: #fff;
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          aspect-ratio: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 2.8rem;
+          font-weight: 700;
+          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+          position: relative;
+          overflow: hidden;
+        }
+        .aug-cell .label {
+          position: absolute;
+          bottom: 6px;
+          left: 0;
+          right: 0;
+          text-align: center;
+          font-size: 0.6rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--neutral);
+        }
+      </style>
+    </div>
+
+    <div class="reveal">
+      <p>The model sees: <span class="hl">colored backgrounds</span>, <span class="hl">rotation and tilt</span>, <span class="hl">blur</span> (like camera out of focus), <span class="hl">color shifts</span>, <span class="hl">noise</span> (grain), and even <span class="hl">inverted colors</span>. This forces it to look past surface details and focus on the underlying letter shapes.</p>
+    </div>
+
+    <div class="analogy reveal">
+      <p>Like training a sommelier by sometimes giving them wine in a plastic cup at a loud party — they still need to identify the wine. No excuses.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════ 9. RECALL@K ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">Measuring Success</div>
+      <h3>Is the right font in the results?</h3>
+      <p>We need a way to measure if the model is actually working. Here's how we test it:</p>
+      <p>1. Take a font we know (e.g. Roboto)<br>
+      2. Render some text in that font<br>
+      3. Mess it up with camera-like effects (blur, tilt, noise)<br>
+      4. Ask the model: "find the closest fonts in the database"<br>
+      5. Check: <span class="hl">is the correct font family somewhere in the results?</span></p>
+    </div>
+
+    <div class="card reveal">
+      <div class="card-label">Example — Recall@5 test for Roboto</div>
+      <div class="recall-demo">
+        <div class="recall-query">
+          <div class="recall-query-img" style="font-family: Arial, sans-serif; transform: rotate(3deg); filter: blur(0.5px); background: #d8d0c4;">Ab</div>
+          <div class="recall-query-text">
+            We render "Ab" in <strong>Roboto</strong>, add camera effects, and ask:<br>
+            "Find the 5 closest fonts in the database."
+          </div>
+        </div>
+        <div class="recall-results">
+          <div class="recall-result">
+            <div class="recall-rank">#1</div>
+            <div class="recall-font-name">Inter</div>
+            <div class="recall-badge miss">close but no</div>
+          </div>
+          <div class="recall-result">
+            <div class="recall-rank">#2</div>
+            <div class="recall-font-name">Source Sans</div>
+            <div class="recall-badge miss">no</div>
+          </div>
+          <div class="recall-result hit">
+            <div class="recall-rank">#3</div>
+            <div class="recall-font-name">Roboto</div>
+            <div class="recall-badge match">correct!</div>
+          </div>
+          <div class="recall-result">
+            <div class="recall-rank">#4</div>
+            <div class="recall-font-name">Noto Sans</div>
+            <div class="recall-badge miss">no</div>
+          </div>
+          <div class="recall-result">
+            <div class="recall-rank">#5</div>
+            <div class="recall-font-name">Open Sans</div>
+            <div class="recall-badge miss">no</div>
+          </div>
+        </div>
+        <div class="recall-verdict pass">
+          Roboto appeared in the top 5 → this counts as a <strong>Recall@5 hit</strong>. If we checked only the top 1, it would be a miss (Recall@1 miss).
+        </div>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <p>We repeat this test for <span class="hl">every font in the validation set</span> and calculate the percentage that are found. <span class="hl">Recall@5 = 87%</span> means 87% of the time, the correct font family appears somewhere in the top 5 results.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════ 10. RESULTS ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">Results</div>
+      <h3>The numbers</h3>
+      <p>After training for 20 epochs (full passes through the dataset) on an A100 GPU:</p>
+    </div>
+
+    <div class="metric-row reveal" id="metrics">
+      <div class="metric">
+        <div class="value" data-target="65">0%</div>
+        <div class="mlabel">Recall@1</div>
+        <div class="change">3.1× vs previous</div>
+        <div class="explain">Correct font is the #1 result</div>
+      </div>
+      <div class="metric">
+        <div class="value" data-target="87">0%</div>
+        <div class="mlabel">Recall@5</div>
+        <div class="change">2.0× vs previous</div>
+        <div class="explain">Correct font is in the top 5</div>
+      </div>
+      <div class="metric">
+        <div class="value" data-target="93">0%</div>
+        <div class="mlabel">Recall@10</div>
+        <div class="change">1.7× vs previous</div>
+        <div class="explain">Correct font is in the top 10</div>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <p>The biggest jump came from one key insight: <span class="hl">train on font family identity, not just tag similarity</span>. Instead of telling the model "these fonts have similar descriptions," we told it "these fonts are literally the same family." A much stronger and more direct signal.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════ 11. STACK ═══ -->
+  <section>
+    <div class="reveal">
+      <div class="section-label">Summary</div>
+      <h3>The full recipe</h3>
+    </div>
+
+    <div class="card reveal">
+      <div style="display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; align-items: baseline;">
+        <div style="font-weight: 700; font-size: 0.85rem;">Base model</div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary);">DINOv2 — Meta's vision model, already understands images</div>
+
+        <div style="font-weight: 700; font-size: 0.85rem;">Fine-tuning</div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary);">LoRA — only modifies 0.4% of the model, keeps existing knowledge</div>
+
+        <div style="font-weight: 700; font-size: 0.85rem;">Learning method</div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary);">Contrastive learning — same family = close, different = far</div>
+
+        <div style="font-weight: 700; font-size: 0.85rem;">Robustness</div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary);">Camera augmentation — blur, tilt, noise, color shifts during training</div>
+
+        <div style="font-weight: 700; font-size: 0.85rem;">Output</div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary);">256-number fingerprint per image, compared against 3,641 Google Fonts</div>
+
+        <div style="font-weight: 700; font-size: 0.85rem;">Hardware</div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary);">A100 GPU on Modal, ~1 hour training time</div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="reveal">
+    Built with DINOv2, PyTorch, LoRA, and Modal.
+  </footer>
+
+</div>
+
+<script>
+// ── Scroll reveal ──
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.1 });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// ── LoRA Grid ──
+const loraGrid = document.getElementById('lora-grid');
+const totalCells = 400; // 20x20
+const activeCells = new Set();
+while (activeCells.size < Math.round(totalCells * 0.004 * 25)) {
+  activeCells.add(Math.floor(Math.random() * totalCells));
+}
+for (let i = 0; i < totalCells; i++) {
+  const cell = document.createElement('div');
+  cell.className = 'lora-cell' + (activeCells.has(i) ? ' active' : '');
+  if (activeCells.has(i)) {
+    cell.style.animationDelay = (Math.random() * 0.8) + 's';
+  }
+  loraGrid.appendChild(cell);
+}
+
+// ── Fingerprint Bars ──
+function makeFingerprint(seed, variation) {
+  const bars = [];
+  for (let i = 0; i < 64; i++) {
+    const base = Math.sin(seed + i * 0.5) * 0.5 + 0.5;
+    const noise = (Math.sin(seed * 7 + i * 3.7 + variation * 13) * 0.5 + 0.5) * 0.3;
+    bars.push(Math.max(0.08, Math.min(1, base + noise)));
+  }
+  return bars;
+}
+
+function renderBars(containerId, values, hue) {
+  const container = document.getElementById(containerId);
+  values.forEach(v => {
+    const bar = document.createElement('div');
+    bar.className = 'fp-bar';
+    bar.style.background = `hsl(${hue}, 50%, ${85 - v * 50}%)`;
+    bar.style.alignSelf = 'end';
+    bar.style.height = (v * 100) + '%';
+    container.appendChild(bar);
+  });
+}
+
+const robotoBase = makeFingerprint(42, 0);
+const robotoLight = makeFingerprint(42, 0.4);
+const playfair = makeFingerprint(137, 2);
+
+renderBars('fp-roboto-bold', robotoBase, 210);
+renderBars('fp-roboto-light', robotoLight, 210);
+renderBars('fp-playfair', playfair, 20);
+
+// ── Embedding Canvas ──
+const canvas = document.getElementById('embedding-canvas');
+const ctx = canvas.getContext('2d');
+let dots = [];
+let animFrame;
+const FAMILIES = [
+  { name: 'Roboto', color: '#22c55e', cx: 0.2, cy: 0.3 },
+  { name: 'Playfair', color: '#ef4444', cx: 0.78, cy: 0.72 },
+  { name: 'Oswald', color: '#3b82f6', cx: 0.25, cy: 0.72 },
+  { name: 'Lora', color: '#f59e0b', cx: 0.75, cy: 0.25 },
+  { name: 'Fira Code', color: '#8b5cf6', cx: 0.5, cy: 0.5 },
+];
+
+let clustered = false;
+
+function resizeCanvas() {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * 2;
+  canvas.height = 380 * 2;
+  canvas.style.height = '380px';
+}
+
+function initDots() {
+  dots = [];
+  const w = canvas.width, h = canvas.height;
+  FAMILIES.forEach(fam => {
+    for (let i = 0; i < 5; i++) {
+      const sx = Math.random() * w * 0.8 + w * 0.1;
+      const sy = Math.random() * h * 0.8 + h * 0.1;
+      dots.push({
+        x: sx, y: sy,
+        tx: sx, ty: sy,
+        cx: fam.cx * w + (Math.random() - 0.5) * 0.05 * w,
+        cy: fam.cy * h + (Math.random() - 0.5) * 0.05 * h,
+        color: fam.color,
+        family: fam.name,
+        r: 6 + Math.random() * 2,
+      });
+    }
+  });
+}
+
+function drawDots() {
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Draw lines between same-family dots if clustered
+  if (clustered) {
+    FAMILIES.forEach(fam => {
+      const famDots = dots.filter(d => d.family === fam.name);
+      for (let i = 0; i < famDots.length; i++) {
+        for (let j = i + 1; j < famDots.length; j++) {
+          ctx.beginPath();
+          ctx.moveTo(famDots[i].x, famDots[i].y);
+          ctx.lineTo(famDots[j].x, famDots[j].y);
+          ctx.strokeStyle = fam.color + '20';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+    });
+  }
+
+  dots.forEach(d => {
+    d.x += (d.tx - d.x) * 0.07;
+    d.y += (d.ty - d.y) * 0.07;
+
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.r * 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = d.color + '18';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    ctx.fillStyle = d.color;
+    ctx.fill();
+  });
+
+  ctx.font = '600 22px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  FAMILIES.forEach(fam => {
+    const fd = dots.filter(d => d.family === fam.name);
+    const ax = fd.reduce((s, d) => s + d.x, 0) / fd.length;
+    const ay = fd.reduce((s, d) => s + d.y, 0) / fd.length;
+    ctx.fillStyle = fam.color + (clustered ? 'cc' : '55');
+    ctx.fillText(fam.name, ax, ay - 22);
+  });
+
+  animFrame = requestAnimationFrame(drawDots);
+}
+
+canvas.addEventListener('click', () => {
+  clustered = !clustered;
+  dots.forEach(d => {
+    if (clustered) {
+      d.tx = d.cx;
+      d.ty = d.cy;
+    } else {
+      d.tx = Math.random() * canvas.width * 0.8 + canvas.width * 0.1;
+      d.ty = Math.random() * canvas.height * 0.8 + canvas.height * 0.1;
+    }
+  });
+  document.getElementById('canvas-hint').textContent = clustered
+    ? 'after training — same families cluster together. click to scatter.'
+    : 'before training — fonts are randomly scattered. click to cluster.';
+});
+
+resizeCanvas();
+initDots();
+drawDots();
+window.addEventListener('resize', () => {
+  cancelAnimationFrame(animFrame);
+  resizeCanvas();
+  initDots();
+  if (clustered) dots.forEach(d => { d.x = d.tx = d.cx; d.y = d.ty = d.cy; });
+  drawDots();
+});
+
+// ── Batch Grid ──
+const batchFamilies = [
+  { name: 'Roboto', color: '#22c55e', s1: 'Bold', s2: 'Light' },
+  { name: 'Playfair', color: '#ef4444', s1: 'Regular', s2: 'Bold' },
+  { name: 'Oswald', color: '#3b82f6', s1: 'Medium', s2: 'SemiBold' },
+  { name: 'Lora', color: '#f59e0b', s1: 'Italic', s2: 'Bold' },
+  { name: 'Inter', color: '#8b5cf6', s1: 'Regular', s2: 'Black' },
+  { name: 'Poppins', color: '#ec4899', s1: 'Thin', s2: 'Bold' },
+  { name: 'Montserrat', color: '#14b8a6', s1: 'Light', s2: 'ExtraBold' },
+  { name: 'Open Sans', color: '#f97316', s1: 'Regular', s2: 'SemiBold' },
+  { name: 'Raleway', color: '#6366f1', s1: 'Medium', s2: 'Bold' },
+  { name: 'Nunito', color: '#84cc16', s1: 'Regular', s2: 'Light' },
+];
+
+const batchGrid = document.getElementById('batch-grid');
+batchFamilies.forEach(fam => {
+  const label = document.createElement('div');
+  label.className = 'batch-family';
+  label.textContent = fam.name;
+  label.style.color = fam.color;
+  batchGrid.appendChild(label);
+
+  [fam.s1, fam.s2].forEach(variant => {
+    const cell = document.createElement('div');
+    cell.className = 'batch-cell';
+    cell.style.background = fam.color + '18';
+    cell.style.color = fam.color;
+    cell.style.fontSize = '0.7rem';
+    cell.style.fontWeight = '600';
+    cell.textContent = variant;
+    batchGrid.appendChild(cell);
+  });
+});
+
+// ── Augmentation Cells ──
+const augEffects = {
+  1: [
+    { transform: 'rotate(5deg)', bg: '#e8dcc8', color: '#2a2a2a', label: 'Tilted' },
+    { transform: 'rotate(-4deg) scale(0.9)', bg: '#d4e8d4', color: '#1a1a1a', label: 'Rotated' },
+    { transform: 'perspective(200px) rotateY(8deg)', bg: '#f0d0d0', color: '#222', label: 'Perspective' },
+    { transform: 'none', bg: '#fff', color: '#1a1a1a', label: 'Click me' },
+  ],
+  2: [
+    { transform: 'none', bg: '#dde', color: '#1a1a1a', label: 'Mild blur', filter: 'blur(1px)' },
+    { transform: 'none', bg: '#eed', color: '#333', label: 'Medium blur', filter: 'blur(2.5px)' },
+    { transform: 'none', bg: '#ccc', color: '#333', label: 'Heavy blur', filter: 'blur(4px)' },
+    { transform: 'none', bg: '#fff', color: '#1a1a1a', label: 'Click me', filter: 'none' },
+  ],
+  3: [
+    { transform: 'none', bg: '#2a2a2a', color: '#f0f0f0', label: 'Dark bg', filter: 'contrast(1.4)' },
+    { transform: 'skewX(-3deg)', bg: '#ff9', color: '#333', label: 'Noisy', filter: 'saturate(1.5)' },
+    { transform: 'none', bg: '#fff', color: '#1a1a1a', label: 'Inverted', filter: 'invert(1)' },
+    { transform: 'none', bg: '#fff', color: '#1a1a1a', label: 'Click me', filter: 'none' },
+  ],
+};
+const augState = { 1: 0, 2: 0, 3: 0 };
+
+[1, 2, 3].forEach(i => {
+  document.getElementById('aug-' + i).addEventListener('click', () => {
+    const fx = augEffects[i][augState[i] % augEffects[i].length];
+    const cell = document.getElementById('aug-' + i);
+    const span = cell.querySelector('span');
+    span.style.transform = fx.transform;
+    span.style.filter = fx.filter || 'none';
+    cell.style.background = fx.bg;
+    cell.style.color = fx.color;
+    cell.querySelector('.label').textContent = fx.label;
+    augState[i]++;
+  });
+});
+
+// ── Loss Bar Animation ──
+const lossObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.querySelectorAll('.loss-fill').forEach(bar => {
+        bar.style.width = bar.dataset.width + '%';
+      });
+    }
+  });
+}, { threshold: 0.3 });
+const lossCard = document.getElementById('loss-card');
+if (lossCard) lossObserver.observe(lossCard);
+
+// ── Metric Counter ──
+const metricObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.querySelectorAll('.value').forEach(el => {
+        const target = parseInt(el.dataset.target);
+        let current = 0;
+        const step = () => {
+          current += Math.ceil(target / 35);
+          if (current >= target) { el.textContent = target + '%'; return; }
+          el.textContent = current + '%';
+          requestAnimationFrame(step);
+        };
+        step();
+      });
+      metricObserver.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.3 });
+const metrics = document.getElementById('metrics');
+if (metrics) metricObserver.observe(metrics);
+</script>
+
+</body>
+</html>

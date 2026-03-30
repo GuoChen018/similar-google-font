@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.cursor/
+.vscode/
+
+# Debug output (regenerable)
+debug_output/
+debug_b0_*.png
+debug_preprocessed_*.png
+debug_annotated.png
+
+# Recall samples (regenerable from model)
+recall_samples/
+recall_samples_v6/
