@@ -14,9 +14,93 @@ image = (
     .run_commands(
         "python3 -c \"from rembg import new_session; new_session('isnet-general-use')\"",
     )
+    .run_commands(
+        "python3 -c \""
+        "import os, urllib.request; "
+        "os.makedirs('/root/.cache/realesrgan', exist_ok=True); "
+        "urllib.request.urlretrieve("
+        "'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth', "
+        "'/root/.cache/realesrgan/RealESRGAN_x4plus.pth')\"",
+    )
 )
 
 volume = modal.Volume.from_name("font-data", create_if_missing=True)
+
+
+# ── Inline RRDBNet (Real-ESRGAN x4) — avoids broken basicsr/realesrgan packages ─
+
+def _build_rrdbnet():
+    """Construct RRDBNet and load Real-ESRGAN x4plus weights. Pure PyTorch."""
+    import torch
+    from torch import nn
+    from torch.nn import functional as F
+
+    class ResidualDenseBlock(nn.Module):
+        def __init__(self, nf=64, gc=32):
+            super().__init__()
+            self.conv1 = nn.Conv2d(nf, gc, 3, 1, 1)
+            self.conv2 = nn.Conv2d(nf + gc, gc, 3, 1, 1)
+            self.conv3 = nn.Conv2d(nf + 2 * gc, gc, 3, 1, 1)
+            self.conv4 = nn.Conv2d(nf + 3 * gc, gc, 3, 1, 1)
+            self.conv5 = nn.Conv2d(nf + 4 * gc, nf, 3, 1, 1)
+            self.lrelu = nn.LeakyReLU(0.2, inplace=True)
+
+        def forward(self, x):
+            x1 = self.lrelu(self.conv1(x))
+            x2 = self.lrelu(self.conv2(torch.cat((x, x1), 1)))
+            x3 = self.lrelu(self.conv3(torch.cat((x, x1, x2), 1)))
+            x4 = self.lrelu(self.conv4(torch.cat((x, x1, x2, x3), 1)))
+            x5 = self.conv5(torch.cat((x, x1, x2, x3, x4), 1))
+            return x5 * 0.2 + x
+
+    class RRDB(nn.Module):
+        def __init__(self, nf, gc=32):
+            super().__init__()
+            self.rdb1 = ResidualDenseBlock(nf, gc)
+            self.rdb2 = ResidualDenseBlock(nf, gc)
+            self.rdb3 = ResidualDenseBlock(nf, gc)
+
+        def forward(self, x):
+            out = self.rdb1(x)
+            out = self.rdb2(out)
+            out = self.rdb3(out)
+            return out * 0.2 + x
+
+    class RRDBNet(nn.Module):
+        def __init__(self, num_in_ch=3, num_out_ch=3, scale=4,
+                     num_feat=64, num_block=23, num_grow_ch=32):
+            super().__init__()
+            self.scale = scale
+            self.conv_first = nn.Conv2d(num_in_ch, num_feat, 3, 1, 1)
+            self.body = nn.Sequential(
+                *[RRDB(num_feat, num_grow_ch) for _ in range(num_block)])
+            self.conv_body = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+            self.conv_up1 = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+            self.conv_up2 = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+            self.conv_hr = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+            self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
+            self.lrelu = nn.LeakyReLU(0.2, inplace=True)
+
+        def forward(self, x):
+            feat = self.conv_first(x)
+            body_feat = self.conv_body(self.body(feat))
+            feat = feat + body_feat
+            feat = self.lrelu(self.conv_up1(
+                F.interpolate(feat, scale_factor=2, mode='nearest')))
+            feat = self.lrelu(self.conv_up2(
+                F.interpolate(feat, scale_factor=2, mode='nearest')))
+            return self.conv_last(self.lrelu(self.conv_hr(feat)))
+
+    model = RRDBNet()
+    state = torch.load("/root/.cache/realesrgan/RealESRGAN_x4plus.pth",
+                       map_location="cpu")
+    if "params_ema" in state:
+        state = state["params_ema"]
+    elif "params" in state:
+        state = state["params"]
+    model.load_state_dict(state, strict=True)
+    model.eval()
+    return model
 
 
 # ── Pre-compute font index (per-image embeddings with text labels) ─────────────
@@ -240,20 +324,41 @@ class TextDetector:
 
         import math
 
-        boxes = []
+        raw_boxes = []
         for bbox, text, conf in ocr_results:
             xs = [p[0] for p in bbox]
             ys = [p[1] for p in bbox]
             tl, tr = bbox[0], bbox[1]
             angle = math.degrees(math.atan2(tr[1] - tl[1], tr[0] - tl[0]))
             angle = max(-45.0, min(45.0, angle))
-            boxes.append({
+            raw_boxes.append({
                 "x": int(min(xs)), "y": int(min(ys)),
                 "width": int(max(xs) - min(xs)),
                 "height": int(max(ys) - min(ys)),
                 "text": text, "conf": conf,
                 "angle": angle,
             })
+
+        boxes = []
+        for b in raw_boxes:
+            words = b["text"].split()
+            if len(words) <= 1:
+                boxes.append(b)
+            else:
+                total_chars = sum(len(w) for w in words)
+                cursor = 0
+                for w in words:
+                    frac_start = cursor / total_chars
+                    frac_end = (cursor + len(w)) / total_chars
+                    boxes.append({
+                        "x": int(b["x"] + frac_start * b["width"]),
+                        "y": b["y"],
+                        "width": int((frac_end - frac_start) * b["width"]),
+                        "height": b["height"],
+                        "text": w, "conf": b["conf"],
+                        "angle": b["angle"],
+                    })
+                    cursor += len(w)
 
         boxes.sort(key=lambda b: (b["y"], b["x"]))
 
@@ -353,7 +458,8 @@ class TextDetector:
 
 # ── Font matcher: rembg preprocessing + OCR-filtered DINOv2 matching ───────────
 
-@app.cls(image=image, gpu="T4", timeout=120, volumes={"/data": volume})
+@app.cls(image=image, gpu="T4", timeout=120, startup_timeout=180,
+         volumes={"/data": volume})
 class FontMatcher:
     @modal.enter()
     def load_models(self):
@@ -365,6 +471,9 @@ class FontMatcher:
 
         self.device = torch.device("cuda")
         self.rembg_session = new_session("isnet-general-use")
+
+        self.esrgan = _build_rrdbnet().half().to(self.device)
+        print("Real-ESRGAN loaded (inline RRDBNet x4plus, fp16)")
 
         class FontEmbedder(nn.Module):
             def __init__(self, backbone):
@@ -456,23 +565,35 @@ class FontMatcher:
         return pil_img.crop((x0, y0, x1, y1))
 
     def _tile_quality_ok(self, pil_sq):
-        """Reject empty, nearly full, or extreme ink layouts."""
+        """Reject tiles where rembg failed: inverted, too much ink, smudgy, etc."""
         import numpy as np
+        import cv2
 
         g = np.array(pil_sq.convert("L"), dtype=np.float32)
         if g.size < 64:
             return False
+
         ink = (g < 200).astype(np.float32)
         frac = ink.mean()
-        if frac < 0.004 or frac > 0.62:
+        if frac < 0.004 or frac > 0.35:
             return False
+
         ys, xs = np.where(ink > 0.5)
         if len(xs) < 8:
             return False
+
         span_x = (xs.max() - xs.min() + 1) / g.shape[1]
         span_y = (ys.max() - ys.min() + 1) / g.shape[0]
         if span_x < 0.04 and span_y < 0.04:
             return False
+
+        bw = (g < 180).astype(np.uint8) * 255
+        edges = cv2.Canny(bw, 50, 150)
+        edge_pixels = (edges > 0).sum()
+        ink_pixels = (g < 200).sum()
+        if ink_pixels > 100 and edge_pixels / ink_pixels < 0.08:
+            return False
+
         return True
 
     def _match_chars(self, char_images, ocr_text: str, top_k: int):
@@ -514,7 +635,8 @@ class FontMatcher:
         for fn, idxs in font_entry_indices.items():
             font_sims = sims[:, idxs]
             best_per_char = font_sims.max(dim=1).values
-            font_scores[fn] = best_per_char.mean().item()
+            top_k_tiles = min(2, best_per_char.shape[0])
+            font_scores[fn] = best_per_char.topk(top_k_tiles).values.mean().item()
 
         print(f"Matched {len(char_images)} chars against {len(font_entry_indices)} fonts")
 
@@ -550,13 +672,27 @@ class FontMatcher:
 
         return results
 
+    MIN_UPSCALE_HEIGHT = 150
+
     def _preprocess(self, image_bytes: bytes, angle: float = 0.0):
-        """Single-image preprocess: rembg + sigmoid alpha inversion + crop + square."""
+        """Single-image preprocess: upscale if small → rembg → sigmoid alpha inversion → crop → square."""
         import numpy as np
         from PIL import Image
         from rembg import remove
 
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        if min(img.size) < self.MIN_UPSCALE_HEIGHT:
+            import torch
+            img_np = np.array(img).astype(np.float32) / 255.0
+            tensor = torch.from_numpy(img_np).permute(2, 0, 1).unsqueeze(0)
+            tensor = tensor.half().to(self.device)
+            with torch.inference_mode():
+                sr = self.esrgan(tensor)
+            sr = sr.squeeze(0).clamp(0, 1).float().cpu().permute(1, 2, 0).numpy()
+            img = Image.fromarray((sr * 255).astype(np.uint8))
+            print(f"    Real-ESRGAN upscaled crop to {img.size[0]}x{img.size[1]}")
+
         debug_data = {"crop": self._img_to_base64(img)}
 
         output = remove(img, session=self.rembg_session)
@@ -701,7 +837,7 @@ class FontMatcher:
 
         for block in regions:
             block_id = block["id"]
-            all_tiles = []
+            lines_tiles = []
             text_parts = []
             block_debug = {"lines": []}
 
@@ -717,6 +853,7 @@ class FontMatcher:
 
                 line_debug = {"id": f"{block_id}_line", "chars": [],
                               "raw_crops": []}
+                line_tiles = []
 
                 for g in groups:
                     crop = self._generous_crop(full_img, g)
@@ -726,19 +863,26 @@ class FontMatcher:
                     crop.save(buf, format="PNG")
                     tile, _ = self._preprocess(buf.getvalue())
                     if self._tile_quality_ok(tile):
-                        all_tiles.append(tile)
+                        line_tiles.append(tile)
                         if debug:
                             line_debug["raw_crops"].append(
                                 self._img_to_base64(crop))
                             line_debug["chars"].append(
                                 self._img_to_base64(tile))
 
+                lines_tiles.append(line_tiles)
                 print(f"  Block {block_id}: {len(groups)} word groups "
-                      f"→ {len(all_tiles)} tiles from '{ocr_line}'")
+                      f"→ {len(line_tiles)} tiles from '{ocr_line}'")
                 if debug:
                     block_debug["lines"].append(line_debug)
 
-            all_tiles = all_tiles[:self.MAX_TILES_PER_BLOCK]
+            all_tiles = []
+            if lines_tiles:
+                max_depth = max(len(lt) for lt in lines_tiles)
+                for i in range(max_depth):
+                    for lt in lines_tiles:
+                        if i < len(lt) and len(all_tiles) < self.MAX_TILES_PER_BLOCK:
+                            all_tiles.append(lt[i])
             combined_ocr = " ".join(text_parts).strip()
 
             if all_tiles:
